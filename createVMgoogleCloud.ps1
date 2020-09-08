@@ -1,0 +1,1 @@
+gcloud compute instances create appviewx --image centos-7-v20200811 --image-project centos-cloud --private-network-ip 10.172.0.31

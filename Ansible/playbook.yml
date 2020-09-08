@@ -1,0 +1,121 @@
+---
+  - name: AppviewX deploy
+    hosts: appviewx
+    become: yes
+    vars:
+      # MODIFYABLE (to match gcloud user)
+      ansible_user: cvetozaver      
+
+    tasks:
+      ##  P R E R E Q U I S I T I E S
+      ##  **********************************************************************************************    
+      - name: Install prerequisities
+        yum:
+          name: "{{ item }}"
+          state: latest
+        loop:
+        - yum
+        - nc
+        - nmap-ncat
+        - nmap
+        - curl
+        - sysstat
+        - tcpdump
+        - rsync
+        - net-tools #netstat
+        - zip
+        - unzip
+        - openssl
+        - bind-utils
+        - git
+        - git-lfs
+        - rsnapshot
+        - fontconfig # Should be version 2.13.0   
+        - openldap-clients
+        - bzip2
+
+      # How many open files and processes can the user appviewx have at once?
+      - name: Increase limits -u and limits -n
+        lineinfile:
+            path: /etc/security/limits.conf
+            line: "{{ item }}"
+            create: yes
+        loop:
+          - "appviewx         soft    nproc           65536"
+          - "appviewx         hard    nproc           65536"
+          - "appviewx         soft    nofile          65536"
+          - "appviewx         hard    nofile          65536"
+        tags:
+          - tag_limit
+
+      ## SET SYSTEM LOCALE
+      # https://github.com/shhirose/ansible-locale has a nice solution
+      # Google Cloud already set, so I don't need to do anything at this panos_interface
+
+      - name: vm_max_map_count set line
+        lineinfile:
+            path: /etc/sysctl.conf
+            line: echo "vm.max_map_count=262144"
+            create: yes
+
+      - name: Reload sysctl system
+        command: sysctl --system
+
+      ## Create User
+      - name: Create user consul
+        user:
+            name: appviewx                                                          # required. Name of the user to create, remove or modify.
+            expires: -1 
+            shell: /bin/bash
+            system: yes
+            state: present
+            create_home: yes
+        tags:
+          - tag_createuser
+
+      ## COPY APPVIEWX PACKAGES AND ADDONS TO REMOTE
+      - name: Copy to remote and unpackage
+        become_user: appviewx
+        unarchive:
+          src: appviewx/{{ item }}
+          dest: /home/appviewx/
+          remote_src: no        # no means copy from local machine
+        loop:
+          - appviewx_installer_2020.1.0_ga_B185_2aef439bdd8c90d3943e20adc9731f77.tar.gz 
+        tags:
+          - tag_copy_to_remote
+
+      - name: Copy addon to remote
+        become_user: appviewx
+        copy:
+          src: appviewx/{{ item }}
+          dest: /home/appviewx/installer
+          remote_src: no        # no means copy from local machine
+        loop:
+          - appviewx_addons.tar.gz
+        tags:
+          - tag_copy_addons
+
+      # Edit the appviewx.conf file to include the addons you wish to be installed
+
+      
+      # Extract the latest patch to the install directory
+
+
+      # This doesn't work, requires pexpect python library on target. Overengineering, just install manually.
+      # - name: Run the installation script
+      #   become_user: appviewx
+      #   command: "{{ item }}"
+      #   loop:
+      #     - mv /home/appviewx/appview_addons.tar.gz /home/appviewx/installer/ 
+      # - name:
+      #   expect:
+      #       command: ./home/appviewx/installer/installer.sh
+      #       responses:
+      #         (?i)password: "MySekretPa$$word"
+      #   tags:
+      #     - run_script
+
+      # The database passwords can be found in the file: /home/appviewx/appviewx/scripts/.mongo_users
+      # Two unseal keys can be found in the file: /home/appviewx/appviewx/scripts/.unseal_keys
+      # Take a backup and delete the file.
